@@ -1,2 +1,2 @@
-# calculator
-A calculator with a CLI
+# mathshell
+A calculator with a CLI. 
