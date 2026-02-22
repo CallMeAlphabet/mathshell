@@ -44,7 +44,7 @@ function fmtNum(n) {
 // INDEXEDDB PERSISTENCE
 // ══════════════════════════════════════════════════════════════════════════════
 
-const IDB_NAME = "mathshell_vfs";
+const IDB_NAME = "mash_vfs";
 const IDB_STORE = "nodes";
 const IDB_VER = 1;
 
@@ -112,14 +112,16 @@ class VFS {
     this._mkdirP("/bin");
     this._mkdirP("/usr/bin");
     this._mkdirP("/var/log");
-    this._wf("/etc/hostname",    "mathshell\n");
-    this._wf("/etc/motd",        "MathShell OS 1.0 — POSIX-like shell with built-in calculator\nType 'help' for a list of commands.\nFiles persist across sessions. Type 'wipe-fs' to reset everything.\n");
-    this._wf("/etc/os-release",  'NAME="MathShell OS"\nVERSION="1.0"\nID=mathshell\n');
-    this._wf("/etc/passwd",      "root:x:0:0:root:/root:/bin/sh\nuser:x:1000:1000:User:/home/user:/bin/mathsh\n");
-    this._wf("/etc/shells",      "/bin/sh\n/bin/mathsh\n");
+    this._wf("/etc/hostname",    "mash\n");
+    this._wf("/etc/motd",        "MASH 1.0 — Math & Shell\nA POSIX-like shell with a built-in calculator.\nType 'help' for a list of commands.\nFiles persist across sessions. Type 'wipe-fs' to reset everything.\n");
+    this._wf("/etc/os-release",  'NAME="MASH"\nVERSION="1.0"\nID=mash\nPRETTY_NAME="MASH 1.0 (Math And Shell)"\nHOME_URL="https://github.com/"\n');
+    this._wf("/etc/passwd",      "root:x:0:0:root:/root:/bin/sh\nuser:x:1000:1000:User:/home/user:/bin/mash\n");
+    this._wf("/etc/shells",      "/bin/sh\n/bin/mash\n");
+    this._wf("/etc/issue",       "MASH 1.0 \\n \\l\n");
     this._wf("/home/user/README.txt",
-      "Welcome to MathShell!\n\nA POSIX-like shell with a built-in calculator.\n\nTry these commands:\n  ls /etc\n  cat /etc/os-release\n  echo hello world\n  math 2^10\n  echo '355/113' | bc\n  seq 1 10 | sort -rn\n  date\n  help\n");
-    this._wf("/home/user/.profile", "# MathShell profile\nexport PATH=/bin:/usr/bin\nexport EDITOR=ed\n");
+      "Welcome to MASH — Math And Shell!\n\nA POSIX-like shell with a built-in math calculator.\nAll standard commands are available. Files persist between sessions.\n\nTry these commands:\n  ls /etc\n  cat /etc/os-release\n  echo hello world\n  math 2^10\n  echo '355/113' | bc\n  seq 1 10 | sort -rn\n  date\n  help\n  help cat\n  help grep\n");
+    this._wf("/home/user/.profile", "# MASH profile\nexport PATH=/bin:/usr/bin\nexport EDITOR=nano\nexport TERM=xterm-256color\n");
+    this._wf("/home/user/.bashrc", "# MASH interactive shell config\nalias ll='ls -la'\nalias la='ls -a'\nalias ..='cd ..'\nalias ...='cd ../..'\n");
     this._wf("/var/log/shell.log", "");
   }
 
@@ -371,12 +373,12 @@ function runPipeline(segs, vfs, sh) {
   return { output: lastOut, exitCode: lastExit };
 }
 
-const MAIN_HELP = `mathsh — POSIX-compatible shell
+const MAIN_HELP = `mash — Math And Shell (POSIX-compatible)
 
 FILE & DIRECTORY
   ls [-laF] [path]        cat <file>           pwd
   cd [dir]                mkdir [-p] <dir>     rmdir <dir>
-  rm [-rf] <file>         cp <src> <dst>       mv <src> <dst>
+  rm [-rf] <file>         cp [-r] <src> <dst>  mv <src> <dst>
   touch <file>            find [-name] [-type] du / df
 
 TEXT PROCESSING
@@ -395,34 +397,94 @@ SHELL & VARIABLES
 MATH
   bc                      expr <expr>           math <expr>
 
+FILES (WRITING)
+  echo 'text' > file      echo 'text' >> file   write <file> <text>
+  append <file> <text>    tee <file>
+
 SYSTEM
   date [+fmt]             uname [-a]            whoami / id
   hostname                ps                    sleep <n>
 
 MISC
   clear                   motd                  download <file>
-  help [cmd]              man <cmd>
+  help [cmd]              man <cmd>             wipe-fs
 
 PIPES & REDIRECTION
   cmd | cmd2              cmd > file            cmd >> file
   cmd < file              cmd ; cmd2
 
-MATH FUNCTIONS (in bc/math)
-  sqrt  cbrt  sin  cos  tan  asin  acos  atan
-  abs  floor  ceil  round  log  log2  ln
-  factorial (n!)   pi   e
+MATH FUNCTIONS (in bc / math)
+  sqrt  cbrt  sin  cos  tan  asin  acos  atan  sinh  cosh  tanh
+  abs   floor ceil  round  log  log2  ln   max   min   pow   sign
+  factorial (n!)   Constants: pi (π), e
+
+Type 'help <command>' for detailed help on any command.
 `;
 
+
 const HELP_TOPICS = {
-  ls:   "ls [-l] [-a] [-F] [path]\n  -l  long format  -a  include hidden  -F  append /\n",
-  grep: "grep [-v] [-i] [-n] [-c] [-e] pattern [file...]\n  -v invert  -i ignore-case  -n line-numbers  -c count\n  Supports POSIX extended regular expressions.\n",
-  sed:  "sed EXPR [file]\n  s/pat/rep/[gi]    substitute\n  /pat/d            delete matching lines\n  /pat/p            keep only matching lines\n  Nd                delete line N\n",
-  awk:  "awk [-F sep] '[/pat/] {action}' [file]\n  print $N   print field N  NR=row NF=fields\n",
-  find: "find [path] [-name glob] [-type f|d] [-maxdepth N]\n",
-  bc:   "bc — arbitrary precision calculator (reads from stdin)\n  echo '2^10' | bc\n",
-  math: "math <expression> — evaluate a math expression\n  math 2^10\n  math sqrt(144)\n  math sin(pi/2)\n",
-  test: "test EXPR  or  [ EXPR ]\n  -f file  -d dir  -e path  -z str  -n str\n  str1 = str2   str1 != str2\n  n1 -eq|-ne|-lt|-le|-gt|-ge n2\n",
+  ls:       "ls [-l] [-a] [-F] [path...]\n  List directory contents.\n  -l  long format (permissions, size, date)\n  -a  include hidden files (dotfiles)\n  -F  append / to directories\n  Examples:\n    ls\n    ls -la /etc\n    ls -lF /home/user\n",
+  cat:      "cat [file...]\n  Concatenate and display file contents.\n  With no file or '-', reads from stdin (pipe input).\n  Examples:\n    cat README.txt\n    cat /etc/os-release\n    echo 'hello' | cat\n    cat file1 file2\n",
+  cd:       "cd [dir]\n  Change the current working directory.\n  With no argument, returns to /home/user.\n  '~' expands to /home/user. '..' goes up one level.\n  Examples:\n    cd /etc\n    cd ..\n    cd ~\n    cd /home/user\n",
+  pwd:      "pwd\n  Print the current working directory (full absolute path).\n  Example:\n    pwd\n",
+  mkdir:    "mkdir [-p] <dir...>\n  Create one or more directories.\n  -p  create parent directories as needed (no error if exists)\n  Examples:\n    mkdir projects\n    mkdir -p /home/user/a/b/c\n    mkdir dir1 dir2 dir3\n",
+  rmdir:    "rmdir <dir...>\n  Remove empty directories. Fails if directory has contents.\n  Use 'rm -rf' to remove non-empty directories.\n  Examples:\n    rmdir emptydir\n    rmdir dir1 dir2\n",
+  rm:       "rm [-r] [-f] <file...>\n  Remove files or directories.\n  -r  recursive (required for directories)\n  -f  force (ignore errors, no prompt)\n  Examples:\n    rm file.txt\n    rm -rf mydir\n    rm -f *.log\n",
+  cp:       "cp <src> <dst>\n  Copy a file to a destination.\n  If dst is a directory, copies src into it.\n  Examples:\n    cp file.txt backup.txt\n    cp notes.txt /tmp/\n",
+  mv:       "mv <src> <dst>\n  Move or rename a file or directory.\n  If dst is a directory, moves src into it.\n  Examples:\n    mv old.txt new.txt\n    mv file.txt /tmp/\n",
+  touch:    "touch <file...>\n  Create an empty file, or update its modification time if it exists.\n  Examples:\n    touch newfile.txt\n    touch a.txt b.txt c.txt\n",
+  find:     "find [path] [-name glob] [-type f|d] [-maxdepth N]\n  Search for files and directories.\n  -name  match filenames with glob (* and ? supported)\n  -type  f=files only, d=directories only\n  -maxdepth  limit recursion depth\n  Examples:\n    find /home/user -name '*.txt'\n    find . -type f\n    find /etc -maxdepth 1\n",
+  du:       "du [path]\n  Show disk usage of a file or directory in kilobytes.\n  Example:\n    du /home/user\n    du README.txt\n",
+  df:       "df\n  Show available disk space for the filesystem.\n  Columns: Filesystem, 1K-blocks, Used, Available, Use%, Mounted on.\n",
+  echo:     "echo [-n] [-e] [text...]\n  Print text to output.\n  -n  do not print trailing newline\n  -e  interpret escape sequences (\\n=newline, \\t=tab, \\\\=backslash)\n  Examples:\n    echo hello world\n    echo -n 'no newline'\n    echo -e 'line1\\nline2'\n",
+  printf:   "printf <format> [args...]\n  Format and print text. Supports %s %d %i %f %%.\n  Escape sequences: \\n \\t \\r \\\\\n  Examples:\n    printf 'Hello %s!\\n' world\n    printf '%d + %d = %d\\n' 2 3 5\n",
+  grep:     "grep [-v] [-i] [-n] [-c] [-e] pattern [file...]\n  Search for lines matching a pattern (POSIX extended regex).\n  -v  invert match (print non-matching lines)\n  -i  ignore case\n  -n  prefix output with line numbers\n  -c  print count of matching lines only\n  -e  specify pattern explicitly\n  Examples:\n    grep 'hello' file.txt\n    grep -i 'error' /var/log/shell.log\n    cat file.txt | grep -v '^#'\n    grep -n 'TODO' notes.txt\n",
+  sed:      "sed EXPR [file]\n  Stream editor for transforming text.\n  s/pat/rep/[gi]    substitute pattern with replacement\n  /pat/d            delete lines matching pattern\n  /pat/p            keep only lines matching pattern\n  Nd                delete line number N\n  -e EXPR           specify expression\n  Examples:\n    echo 'hello world' | sed 's/world/mash/'\n    sed 's/foo/bar/g' file.txt\n    cat file.txt | sed '/^#/d'\n",
+  awk:      "awk [-F sep] '[/pat/] {action}' [file]\n  Pattern-scanning and text processing.\n  -F  field separator (default: whitespace)\n  $0=whole line, $1..$N=fields, NR=row number, NF=field count\n  Examples:\n    echo 'a b c' | awk '{print $2}'\n    awk -F: '{print $1}' /etc/passwd\n    awk 'NR>2 {print NR, $0}' file.txt\n",
+  sort:     "sort [-r] [-n] [-u] [file]\n  Sort lines of text.\n  -r  reverse order\n  -n  numeric sort\n  -u  unique lines only\n  Examples:\n    sort names.txt\n    sort -rn numbers.txt\n    cat file | sort -u\n",
+  uniq:     "uniq [-c] [file]\n  Filter adjacent duplicate lines.\n  -c  prefix lines with count of occurrences\n  Tip: pipe through sort first to deduplicate all duplicates.\n  Examples:\n    sort file.txt | uniq\n    sort file.txt | uniq -c | sort -rn\n",
+  cut:      "cut -d<delim> -f<fields> [file]\n  Cut selected fields from each line.\n  -d  field delimiter (default: tab)\n  -f  field numbers (1-based), comma-separated or range (e.g. 1,3 or 1-3)\n  Examples:\n    cut -d: -f1 /etc/passwd\n    echo 'a,b,c' | cut -d, -f2\n",
+  tr:       "tr [-d] <set1> [set2]\n  Translate or delete characters.\n  -d  delete characters in set1\n  Examples:\n    echo 'hello' | tr 'a-z' 'A-Z'\n    echo 'hello world' | tr -d 'aeiou'\n    echo 'hello' | tr 'el' 'ip'\n",
+  wc:       "wc [-l] [-w] [-c] [file...]\n  Count lines, words, and characters.\n  -l  count lines only\n  -w  count words only\n  -c  count characters only\n  Default: show all three counts.\n  Examples:\n    wc README.txt\n    wc -l /etc/passwd\n    echo 'hello world' | wc -w\n",
+  head:     "head [-n N] [file...]\n  Output the first N lines (default: 10).\n  -n N  print first N lines\n  Examples:\n    head README.txt\n    head -n 5 file.txt\n    cat file.txt | head -20\n",
+  tail:     "tail [-n N] [file...]\n  Output the last N lines (default: 10).\n  -n N  print last N lines\n  Examples:\n    tail README.txt\n    tail -n 3 file.txt\n    cat file.txt | tail -20\n",
+  nl:       "nl [file]\n  Number all lines of a file.\n  Example:\n    nl README.txt\n",
+  tee:      "tee [-a] <file>\n  Read stdin and write to both stdout and a file.\n  -a  append to file instead of overwriting\n  Examples:\n    echo 'hello' | tee output.txt\n    ls | tee -a log.txt\n",
+  seq:      "seq [start] [increment] end\n  Print a sequence of numbers.\n  Examples:\n    seq 5           → 1 2 3 4 5\n    seq 2 10        → 2 3 4 5 6 7 8 9 10\n    seq 0 2 10      → 0 2 4 6 8 10\n    seq 10 -1 1     → 10 9 8 7 6 5 4 3 2 1\n",
+  rev:      "rev [file]\n  Reverse each line character-by-character.\n  Example:\n    echo 'hello' | rev    → olleh\n",
+  fold:     "fold [-w N] [file]\n  Wrap long lines at N characters (default: 80).\n  -w N  wrap at N characters\n  Example:\n    echo 'a very long line...' | fold -w 10\n",
+  od:       "od [file]\n  Display file contents as octal/hex dump.\n  Reads from stdin if no file given.\n  Example:\n    echo 'ABC' | od\n",
+  cksum:    "cksum [file]\n  Print a CRC checksum and byte count.\n  Example:\n    cksum README.txt\n",
+  xargs:    "xargs <cmd> [args...]\n  Build and execute commands from stdin.\n  Reads whitespace-separated items from stdin and appends each to cmd.\n  Examples:\n    echo 'a b c' | xargs echo item:\n    seq 1 3 | xargs -I{} echo 'number {}'\n",
+  bc:       "bc — arbitrary precision calculator\n  Reads expressions from stdin, one per line.\n  Supports: + - * / ^ % sqrt() sin() cos() log() floor() ceil()\n  Constants: pi, e\n  Examples:\n    echo '2^10' | bc\n    echo 'sqrt(144)' | bc\n    echo 'sin(pi/2)' | bc\n",
+  math:     "math <expression>\n  Evaluate a math expression directly.\n  Functions: sqrt cbrt sin cos tan asin acos atan sinh cosh tanh\n             abs floor ceil round log log2 ln max min pow sign\n  Constants: pi (π), e\n  Operators: + - * / ^ % () !\n  Examples:\n    math 2^10\n    math sqrt(144)\n    math sin(pi/6)\n    math 10!\n    math log(1000)\n",
+  expr:     "expr <expression>\n  Evaluate a math or comparison expression.\n  Examples:\n    expr 2 + 2\n    expr 10 '*' 5\n",
+  date:     "date [+format]\n  Display the current date and time.\n  Format codes: %Y year, %m month, %d day, %H hour, %M minute, %S second\n                %a weekday, %b month name, %Z timezone\n  Examples:\n    date\n    date '+%Y-%m-%d'\n    date '+%H:%M:%S'\n    date +%s     (unix timestamp)\n",
+  sleep:    "sleep <seconds>\n  Pause execution for N seconds (no-op in mash, returns immediately).\n  Example:\n    sleep 1; echo done\n",
+  uname:    "uname [-a] [-r] [-n] [-m]\n  Print system information.\n  -a  all information\n  -r  kernel release\n  -n  hostname\n  -m  machine hardware\n  Example:\n    uname -a\n",
+  whoami:   "whoami\n  Print the current user name.\n  Example:\n    whoami\n",
+  id:       "id\n  Print user identity (uid, gid, groups).\n  Example:\n    id\n",
+  hostname: "hostname\n  Print the system hostname.\n  Example:\n    hostname\n",
+  ps:       "ps\n  List running processes.\n  Example:\n    ps\n",
+  export:   "export [VAR=value]\n  Set an environment variable and mark it for export.\n  With no args, lists all exported variables.\n  Examples:\n    export PATH=/bin:/usr/bin\n    export MYVAR=hello\n    export\n",
+  unset:    "unset <VAR...>\n  Remove environment variables.\n  Example:\n    unset MYVAR TMPVAR\n",
+  env:      "env\n  Print all environment variables as KEY=VALUE pairs.\n  Example:\n    env\n    env | grep PATH\n",
+  printenv: "printenv [VAR]\n  Print value of an environment variable, or all variables.\n  Examples:\n    printenv HOME\n    printenv PATH\n    printenv\n",
+  alias:    "alias [name='command']\n  Create or list command aliases.\n  With no args, lists all current aliases.\n  Examples:\n    alias ll='ls -la'\n    alias gs='grep -n'\n    alias\n",
+  unalias:  "unalias <name...>\n  Remove one or more aliases.\n  Example:\n    unalias ll\n",
+  history:  "history [n]\n  Show command history. Optionally limit to last N entries.\n  Use ↑↓ arrow keys to navigate history in the prompt.\n  Examples:\n    history\n    history 10\n",
+  read:     "read [VAR]\n  Read a line from stdin into a variable.\n  Example:\n    echo 'Alice' | read NAME; echo $NAME\n",
+  test:     "test EXPR  or  [ EXPR ]\n  Evaluate a conditional expression. Returns exit code 0=true, 1=false.\n  File tests:   -f file (is file)  -d dir (is dir)  -e path (exists)\n  String tests: -z str (empty)  -n str (non-empty)  str1 = str2\n  Numeric:      n1 -eq|-ne|-lt|-le|-gt|-ge n2\n  Negate:       ! EXPR\n  Examples:\n    test -f README.txt && echo 'exists'\n    [ -d /etc ] && echo 'is a dir'\n    test 5 -gt 3 && echo 'yes'\n",
+  which:    "which <command>\n  Show the full path of a command.\n  Example:\n    which cat\n    which grep\n",
+  type:     "type <command>\n  Describe how a command would be interpreted (builtin, alias, etc).\n  Example:\n    type ls\n    type ll\n",
+  clear:    "clear\n  Clear the terminal screen.\n",
+  motd:     "motd\n  Display the message of the day (/etc/motd).\n",
+  download: "download <file>\n  Download a file from the virtual filesystem to your local machine.\n  Example:\n    download README.txt\n    download /home/user/notes.txt\n",
+  "wipe-fs":"wipe-fs\n  Wipe all persisted filesystem data from IndexedDB and reset to defaults.\n  WARNING: This permanently deletes all files you have created.\n",
+  man:      "man <command>\n  Display the manual page for a command.\n  Same as 'help <command>'.\n  Example:\n    man grep\n    man sed\n",
+  help:     "help [command]\n  Show help for all commands, or detailed help for a specific command.\n  Examples:\n    help\n    help grep\n    help math\n",
 };
+
 
 function execCmd(cmd, args, stdin, vfs, sh) {
   if (!cmd) return { output: "", exitCode: 0 };
@@ -468,14 +530,16 @@ function execCmd(cmd, args, stdin, vfs, sh) {
       return { output: out, exitCode: 0 };
     }
 
+    case "less":
+    case "more":
     case "cat": {
-      if (!args.length || (args.length === 1 && args[0] === "-")) return { output: stdin ?? "", exitCode: 0 };
+      if (!args.length || (args.length === 1 && args[0] === "-")) return { output: (stdin ?? "") || "", exitCode: 0 };
       let out = "", ec = 0;
       for (const a of args) {
         const p = norm(a);
         if (!vfs.exists(p))    { out += `cat: ${a}: No such file or directory\n`; ec = 1; }
         else if (vfs.isDir(p)) { out += `cat: ${a}: Is a directory\n`; ec = 1; }
-        else out += vfs.read(p);
+        else { const content = vfs.read(p); out += content !== null ? content : ""; }
       }
       return { output: out, exitCode: ec };
     }
@@ -547,8 +611,26 @@ function execCmd(cmd, args, stdin, vfs, sh) {
 
     case "cp": {
       if (args.length < 2) return { output: "cp: missing destination file operand\n", exitCode: 1 };
-      const dst = norm(args[args.length - 1]);
-      for (const s of args.slice(0, -1)) { const err = vfs.cp(norm(s), dst); if (err) return { output: err + "\n", exitCode: 1 }; }
+      let recursive = false; const fileArgs = [];
+      for (const a of args) { if (/^-[rRfp]+$/.test(a) && /[rR]/.test(a)) recursive = true; else if (!a.startsWith("-")) fileArgs.push(a); }
+      if (fileArgs.length < 2) return { output: "cp: missing destination file operand\n", exitCode: 1 };
+      const dst = norm(fileArgs[fileArgs.length - 1]);
+      for (const s of fileArgs.slice(0, -1)) {
+        const sp = norm(s);
+        if (recursive && vfs.isDir(sp)) {
+          // Recursive copy directory
+          const destDir = vfs.isDir(dst) ? dst + "/" + sp.split("/").pop() : dst;
+          vfs._mkdirP(destDir);
+          for (const k of Object.keys(vfs._t).filter(k2 => k2.startsWith(sp + "/"))) {
+            const rel = k.slice(sp.length);
+            const newPath = destDir + rel;
+            if (vfs._t[k].type === "dir") vfs._mkdirP(newPath);
+            else vfs._wf(newPath, vfs._t[k].content);
+          }
+        } else {
+          const err = vfs.cp(sp, dst); if (err) return { output: err + "\n", exitCode: 1 };
+        }
+      }
       return { output: "", exitCode: 0 };
     }
 
@@ -702,9 +784,18 @@ function execCmd(cmd, args, stdin, vfs, sh) {
 
     case "sort": {
       let rev=false, num=false, uniq=false; const files=[];
-      for (const a of args) { if (/^-[rnu]+$/.test(a)) { if (a.includes("r")) rev=true; if (a.includes("n")) num=true; if (a.includes("u")) uniq=true; } else files.push(a); }
+      for (let i=0; i<args.length; i++) {
+        const a = args[i];
+        if (/^-[rnuRf]+$/.test(a)) {
+          if (a.includes("r")) rev=true;
+          if (a.includes("n")) num=true;
+          if (a.includes("u")) uniq=true;
+        } else if (a==="-k" || a==="--key") { i++; /* skip key spec */ }
+        else if (a==="-t" || a==="--field-separator") { i++; /* skip */ }
+        else if (!a.startsWith("-")) files.push(a);
+      }
       let text = stdin ?? "";
-      if (files.length) { const p = norm(files[0]); if (vfs.isFile(p)) text = vfs.read(p); }
+      if (files.length) { const p = norm(files[0]); if (vfs.isFile(p)) text = vfs.read(p) ?? ""; }
       let ls = text.split("\n"); if (ls[ls.length-1]==="") ls.pop();
       num ? ls.sort((a,b) => parseFloat(a)-parseFloat(b)) : ls.sort((a,b) => a.localeCompare(b));
       if (rev) ls.reverse(); if (uniq) ls=[...new Set(ls)];
@@ -738,13 +829,34 @@ function execCmd(cmd, args, stdin, vfs, sh) {
     }
 
     case "tr": {
-      let del=false; const ta=[];
-      for (const a of args) { if (a==="-d") del=true; else ta.push(a); }
+      let del=false, squeeze=false; const ta=[];
+      for (const a of args) {
+        if (a==="-d") del=true;
+        else if (a==="-s") squeeze=true;
+        else ta.push(a);
+      }
+      // Expand character ranges like a-z
+      const expandRange = s => {
+        return s.replace(/(.)-(.)/g, (_, a, b) => {
+          const ca = a.charCodeAt(0), cb = b.charCodeAt(0);
+          if (ca > cb) return _;
+          let r = "";
+          for (let i = ca; i <= cb; i++) r += String.fromCharCode(i);
+          return r;
+        });
+      };
       const text = stdin ?? "";
-      if (del && ta[0]) { const s=new Set(ta[0]); return { output: text.split("").filter(c=>!s.has(c)).join(""), exitCode: 0 }; }
-      if (ta.length<2) return { output: text, exitCode: 0 };
+      if (del && ta[0]) {
+        const set = new Set(expandRange(ta[0]).split(""));
+        return { output: text.split("").filter(c => !set.has(c)).join(""), exitCode: 0 };
+      }
+      if (ta.length < 2) return { output: text, exitCode: 0 };
+      const from = expandRange(ta[0]), to = expandRange(ta[1]);
       let out = text;
-      for (let i=0; i<Math.min(ta[0].length,ta[1].length); i++) out = out.split(ta[0][i]).join(ta[1][i]);
+      for (let i = 0; i < from.length; i++) {
+        const toChar = to[Math.min(i, to.length - 1)] ?? "";
+        out = out.split(from[i]).join(toChar);
+      }
       return { output: out, exitCode: 0 };
     }
 
@@ -812,16 +924,17 @@ function execCmd(cmd, args, stdin, vfs, sh) {
     }
 
     case "uname": {
-      if (args.includes("-a")) return { output: `MathShell mathshell 1.0.0 ${new Date().toISOString().split("T")[0]} wasm32 mathsh\n`, exitCode: 0 };
+      if (args.includes("-a")) return { output: `MASH mash 1.0.0 ${new Date().toISOString().split("T")[0]} wasm32 mash\n`, exitCode: 0 };
       if (args.includes("-r")) return { output: "1.0.0\n", exitCode: 0 };
-      if (args.includes("-n")) return { output: "mathshell\n", exitCode: 0 };
+      if (args.includes("-n")) return { output: "mash\n", exitCode: 0 };
       if (args.includes("-m")) return { output: "wasm32\n", exitCode: 0 };
-      return { output: "MathShell\n", exitCode: 0 };
+      if (args.includes("-s")) return { output: "MASH\n", exitCode: 0 };
+      return { output: "MASH\n", exitCode: 0 };
     }
 
     case "whoami": return { output: (sh.env.USER||"user").trim()+"\n", exitCode: 0 };
     case "id": { const u=(sh.env.USER||"user").trim(); return { output: `uid=1000(${u}) gid=1000(${u}) groups=1000(${u})\n`, exitCode: 0 }; }
-    case "hostname": return { output: vfs.read("/etc/hostname")||"mathshell\n", exitCode: 0 };
+    case "hostname": return { output: (vfs.read("/etc/hostname")||"mash\n").trim()+"\n", exitCode: 0 };
 
     case "basename": {
       if (!args.length) return { output: "basename: missing operand\n", exitCode: 1 };
@@ -862,7 +975,11 @@ function execCmd(cmd, args, stdin, vfs, sh) {
     case "which": {
       if (!args.length) return { output: "which: missing argument\n", exitCode: 1 };
       const outs=[]; let ec=0;
-      for (const a of args) { if (BUILTINS.has(a)||sh.aliases[a]) outs.push("/bin/"+a); else { outs.push(`which: no ${a} in (/bin:/usr/bin)`); ec=1; } }
+      for (const a of args) {
+        if (sh.aliases[a]) outs.push(`${a}: aliased to ${sh.aliases[a]}`);
+        else if (BUILTINS.has(a)) outs.push("/bin/"+a);
+        else { outs.push(`which: no ${a} in (/bin:/usr/bin)`); ec=1; }
+      }
       return { output: outs.join("\n")+"\n", exitCode: ec };
     }
     case "type": {
@@ -884,7 +1001,7 @@ function execCmd(cmd, args, stdin, vfs, sh) {
       return { output: slice.map((h,i)=>`  ${String(off+i+1).padStart(4)}  ${h}`).join("\n")+"\n", exitCode: 0 };
     }
 
-    case "ps": return { output: "  PID TTY          TIME CMD\n    1 pts/0    00:00:00 mathsh\n    2 pts/0    00:00:00 ps\n", exitCode: 0 };
+    case "ps": return { output: "  PID TTY          TIME CMD\n    1 pts/0    00:00:00 mash\n    2 pts/0    00:00:00 ps\n", exitCode: 0 };
     case "jobs": case "kill": case "bg": case "fg": return { output: "", exitCode: 0 };
 
     case "du": {
@@ -896,7 +1013,7 @@ function execCmd(cmd, args, stdin, vfs, sh) {
       return { output: `${Math.max(Math.ceil(size/1024),4)}\t${target}\n`, exitCode: 0 };
     }
 
-    case "df": return { output: "Filesystem     1K-blocks  Used Available Use% Mounted on\nmathshellfs      1048576   256   1048320   1% /\n", exitCode: 0 };
+    case "df": return { output: "Filesystem     1K-blocks  Used Available Use% Mounted on\nmashfs           1048576   256   1048320   1% /\n", exitCode: 0 };
 
     case "find": {
       let searchPath=sh.cwd, namePat=null, typeF=null, maxDepth=Infinity;
@@ -933,10 +1050,11 @@ function execCmd(cmd, args, stdin, vfs, sh) {
     }
 
     case "nl": {
-      let text=stdin??"";
-      if (args.length) { const p=norm(args.filter(a=>!a.startsWith("-"))[0]??""); if (vfs.isFile(p)) text=vfs.read(p); }
-      const ls=text.split("\n"); if (ls[ls.length-1]==="") ls.pop();
-      return { output: ls.map((l,i)=>`${String(i+1).padStart(6)}\t${l}`).join("\n")+"\n", exitCode: 0 };
+      let text = stdin ?? "";
+      const fileArg = args.find(a => !a.startsWith("-"));
+      if (fileArg) { const p = norm(fileArg); if (vfs.isFile(p)) text = vfs.read(p) ?? ""; else return { output: `nl: ${fileArg}: No such file or directory\n`, exitCode: 1 }; }
+      const ls = text.split("\n"); if (ls[ls.length-1] === "") ls.pop();
+      return { output: ls.map((l,i) => `${String(i+1).padStart(6)}\t${l}`).join("\n") + (ls.length ? "\n" : ""), exitCode: 0 };
     }
 
     case "tee": {
@@ -992,6 +1110,25 @@ function execCmd(cmd, args, stdin, vfs, sh) {
       return vfs.download(p) ? { output: `Downloading '${args[0]}'...\n`, exitCode: 0 } : { output: "download: failed\n", exitCode: 1 };
     }
 
+    case "nano":
+    case "vi":
+    case "vim": {
+      if (!args.length) return { output: `${cmd}: no file specified. Usage: ${cmd} <file>\n`, exitCode: 1 };
+      const p = norm(args[0]);
+      if (!vfs.exists(p)) vfs.touch(p);
+      if (vfs.isDir(p)) return { output: `${cmd}: ${args[0]}: Is a directory\n`, exitCode: 1 };
+      const content = vfs.read(p) ?? "";
+      return { output: `[${cmd} is not interactive in mash. File contents:\n${content || "(empty file)"}\nUse redirection to write: echo 'text' > ${args[0]}]\n`, exitCode: 0 };
+    }
+
+    case "write":
+    case "append": {
+      if (args.length < 2) return { output: `${cmd}: usage: ${cmd} <file> <text...>\n`, exitCode: 1 };
+      const p = norm(args[0]); const content = args.slice(1).join(" ") + "\n";
+      if (cmd === "append") vfs.append(p, content); else vfs.write(p, content);
+      return { output: "", exitCode: 0 };
+    }
+
     case "clear":  return { output: "__CLEAR__", exitCode: 0 };
     case "exit": { const code=parseInt(args[0]??"0"); return { output: `__EXIT__${isNaN(code)?0:code}`, exitCode: isNaN(code)?0:code }; }
     case "motd":   return { output: vfs.read("/etc/motd")||"", exitCode: 0 };
@@ -1011,16 +1148,16 @@ function execCmd(cmd, args, stdin, vfs, sh) {
     }
 
     default:
-      return { output: `mathsh: ${cmd}: command not found\n`, exitCode: 127 };
+      return { output: `mash: ${cmd}: command not found\n`, exitCode: 127 };
   }
 }
 
-const BUILTINS = new Set(["echo","printf","cat","ls","pwd","cd","mkdir","rmdir","rm","cp","mv","touch",
+const BUILTINS = new Set(["echo","printf","cat","less","more","ls","pwd","cd","mkdir","rmdir","rm","cp","mv","touch",
   "wc","head","tail","grep","sed","awk","sort","uniq","cut","tr","expr","bc","math","date","sleep",
   "true","false","test","[","uname","whoami","id","hostname","basename","dirname","export","unset",
   "env","printenv","read","alias","unalias","which","type","command","history","ps","jobs","kill",
   "bg","fg","du","df","find","xargs","nl","tee","seq","yes","fold","rev","od","cksum","download",
-  "clear","exit","motd","man","help","wipe-fs"]);
+  "clear","exit","motd","man","help","wipe-fs","nano","vi","vim","write","append"]);
 
 // ══════════════════════════════════════════════════════════════════════════════
 // EXECUTE INPUT  (handles ; separated commands)
@@ -1115,9 +1252,10 @@ export default function App() {
   const [cmdHist, setCmdHist]   = useState([]);
   const [cmdIdx, setCmdIdx]     = useState(-1);
   const [savedFlash, setSavedFlash] = useState(false);
+  const [cwd, setCwd]           = useState("/home/user");
 
   const vfs    = useRef(new VFS());
-  const sh     = useRef({ cwd: "/home/user", env: { HOME: "/home/user", USER: "user", PATH: "/bin:/usr/bin", SHELL: "/bin/mathsh", "?": "0" }, aliases: { ll: "ls -la", la: "ls -a" }, history: [] });
+  const sh     = useRef({ cwd: "/home/user", env: { HOME: "/home/user", USER: "user", PATH: "/bin:/usr/bin", SHELL: "/bin/mash", TERM: "xterm-256color", "?": "0" }, aliases: { ll: "ls -la", la: "ls -a", ".." : "cd .." }, history: [] });
   const endRef = useRef(null);
   const inpRef = useRef(null);
   const metaTimer = useRef(null);
@@ -1160,6 +1298,7 @@ export default function App() {
           if (meta.aliases) sh.current.aliases = meta.aliases;
           if (meta.history) sh.current.history = meta.history;
           if (meta.ans)     { setAns(meta.ans); ansR.current = meta.ans; }
+          if (meta.cwd)     setCwd(meta.cwd);
         }
         const motd = vfs.current.read("/etc/motd") || "";
         const restored = records.length > 1 || meta;
@@ -1230,11 +1369,12 @@ export default function App() {
   const submit = () => {
     const raw = inp.trim(); if (!raw) return;
     setCmdHist(h => [raw, ...h]); setCmdIdx(-1);
-    const prompt = `${sh.current.env.USER}@mathsh:${sh.current.cwd}$ `;
+    const promptDisplay = sh.current.cwd === "/home/user" ? "~" : sh.current.cwd;
+    const prompt = `${promptDisplay} ❯ `;
     const newLines = [{ type: "in", text: prompt + raw }];
     const results = executeInput(raw, vfs.current, sh.current);
     for (const res of results) {
-      if (!res.output) continue;
+      if (res.output === undefined || res.output === null) continue;
       if (res.output.startsWith("__CLEAR__")) { setLines([{ type: "sys", text: "Terminal cleared." }]); setInp(""); return; }
       if (res.output.startsWith("__WIPEFS__")) {
         // Clear all IDB data, then rebuild fresh VFS
@@ -1248,8 +1388,8 @@ export default function App() {
           const freshVfs = new VFS();
           freshVfs._db = vfs.current._db;
           vfs.current = freshVfs;
-          sh.current = { cwd: "/home/user", env: { HOME: "/home/user", USER: "user", PATH: "/bin:/usr/bin", SHELL: "/bin/mathsh", "?": "0" }, aliases: { ll: "ls -la", la: "ls -a" }, history: [] };
-          setAns("0"); setCmdHist([]);
+          sh.current = { cwd: "/home/user", env: { HOME: "/home/user", USER: "user", PATH: "/bin:/usr/bin", SHELL: "/bin/mash", TERM: "xterm-256color", "?": "0" }, aliases: { ll: "ls -la", la: "ls -a" }, history: [] };
+          setAns("0"); setCmdHist([]); setCwd("/home/user");
           setLines([{ type: "sys", text: "Filesystem wiped. All persisted data cleared." }]);
           setInp("");
         })();
@@ -1257,9 +1397,10 @@ export default function App() {
       }
       if (res.output.startsWith("__EXIT__")) { const code=parseInt(res.output.slice(8)); newLines.push({ type: "out", text: `[Process exited with code ${code}]` }); break; }
       const text = res.output.replace(/\n$/, "");
-      if (text) newLines.push({ type: "out", text });
+      if (text !== "") newLines.push({ type: "out", text });
     }
     setLines(l => [...l, ...newLines]); setInp("");
+    setCwd(sh.current.cwd);
     saveMeta();
   };
 
@@ -1287,7 +1428,14 @@ export default function App() {
 
   const dispLen = display.length;
   const dispFS  = dispLen > 16 ? "14px" : dispLen > 12 ? "20px" : dispLen > 8 ? "26px" : "34px";
-  const promptStr = `${sh.current.env.USER}@mathsh:${sh.current.cwd}$ `;
+
+  // Smart prompt: ~ for home dir, otherwise the full path
+  const getPromptDisplay = (p) => {
+    if (p === "/home/user") return "~";
+    if (p === "/") return "/";
+    return p;
+  };
+  const promptStr = `${getPromptDisplay(cwd)} ❯ `;
 
   const calcButtons = [
     { l: "C",   kind: "clear", fn: doClear },
@@ -1414,7 +1562,7 @@ export default function App() {
           <span style={{ width:9, height:9, borderRadius:"50%", background:"#3a1515", display:"inline-block" }} />
           <span style={{ width:9, height:9, borderRadius:"50%", background:"#3a3010", display:"inline-block" }} />
           <span style={{ width:9, height:9, borderRadius:"50%", background:"#10203a", display:"inline-block" }} />
-          <span style={{ color:"#1a4a1a", marginLeft:"10px", letterSpacing:"3px", fontSize:"9px" }}>MATHSHELL v1.0</span>
+          <span style={{ color:"#1a4a1a", marginLeft:"10px", letterSpacing:"3px", fontSize:"9px" }}>MASH v1.0</span>
           <span style={{ fontSize:"9px", marginLeft:"auto", transition:"color 0.4s", color: savedFlash ? "#22c55e" : "#0d2010" }}>{savedFlash ? "● SAVED" : "click to collapse ▲"}</span>
         </div>
 
