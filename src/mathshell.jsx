@@ -41,12 +41,71 @@ function fmtNum(n) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// INDEXEDDB PERSISTENCE
+// ══════════════════════════════════════════════════════════════════════════════
+
+const IDB_NAME = "mathshell_vfs";
+const IDB_STORE = "nodes";
+const IDB_VER = 1;
+
+function idbOpen() {
+  return new Promise((res, rej) => {
+    const req = indexedDB.open(IDB_NAME, IDB_VER);
+    req.onupgradeneeded = e => e.target.result.createObjectStore(IDB_STORE, { keyPath: "path" });
+    req.onsuccess = e => res(e.target.result);
+    req.onerror   = e => rej(e.target.error);
+  });
+}
+
+async function idbPut(db, path, node) {
+  return new Promise((res, rej) => {
+    const tx = db.transaction(IDB_STORE, "readwrite");
+    tx.objectStore(IDB_STORE).put({ path, ...node });
+    tx.oncomplete = res; tx.onerror = e => rej(e.target.error);
+  });
+}
+
+async function idbDelete(db, path) {
+  return new Promise((res, rej) => {
+    const tx = db.transaction(IDB_STORE, "readwrite");
+    tx.objectStore(IDB_STORE).delete(path);
+    tx.oncomplete = res; tx.onerror = e => rej(e.target.error);
+  });
+}
+
+async function idbDeletePrefix(db, prefix) {
+  return new Promise((res, rej) => {
+    const tx = db.transaction(IDB_STORE, "readwrite");
+    const store = tx.objectStore(IDB_STORE);
+    const req = store.openCursor();
+    req.onsuccess = e => {
+      const cursor = e.target.result;
+      if (!cursor) return;
+      const k = cursor.key;
+      if (k === prefix || k.startsWith(prefix + "/")) cursor.delete();
+      cursor.continue();
+    };
+    tx.oncomplete = res; tx.onerror = e => rej(e.target.error);
+  });
+}
+
+async function idbLoadAll(db) {
+  return new Promise((res, rej) => {
+    const tx = db.transaction(IDB_STORE, "readonly");
+    const req = tx.objectStore(IDB_STORE).getAll();
+    req.onsuccess = e => res(e.target.result);
+    req.onerror   = e => rej(e.target.error);
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // VIRTUAL FILE SYSTEM
 // ══════════════════════════════════════════════════════════════════════════════
 
 class VFS {
   constructor() {
     this._t = {};
+    this._db = null; // assigned after idbOpen() resolves
     this._mkdirP("/home/user");
     this._mkdirP("/etc");
     this._mkdirP("/tmp");
@@ -54,7 +113,7 @@ class VFS {
     this._mkdirP("/usr/bin");
     this._mkdirP("/var/log");
     this._wf("/etc/hostname",    "mathshell\n");
-    this._wf("/etc/motd",        "MathShell OS 1.0 — POSIX-like shell with built-in calculator\nType 'help' for a list of commands.\n");
+    this._wf("/etc/motd",        "MathShell OS 1.0 — POSIX-like shell with built-in calculator\nType 'help' for a list of commands.\nFiles persist across sessions. Type 'wipe-fs' to reset everything.\n");
     this._wf("/etc/os-release",  'NAME="MathShell OS"\nVERSION="1.0"\nID=mathshell\n');
     this._wf("/etc/passwd",      "root:x:0:0:root:/root:/bin/sh\nuser:x:1000:1000:User:/home/user:/bin/mathsh\n");
     this._wf("/etc/shells",      "/bin/sh\n/bin/mathsh\n");
@@ -64,16 +123,40 @@ class VFS {
     this._wf("/var/log/shell.log", "");
   }
 
+  // Persist a single node to IDB (fire-and-forget, silent on error)
+  _persist(path) {
+    if (this._db && this._t[path]) idbPut(this._db, path, this._t[path]).catch(() => {});
+  }
+
+  // Remove one path from IDB
+  _del(path) {
+    if (this._db) idbDelete(this._db, path).catch(() => {});
+  }
+
+  // Remove a path and all its children from IDB
+  _delPrefix(path) {
+    if (this._db) idbDeletePrefix(this._db, path).catch(() => {});
+  }
+
+  // Overlay IDB records on top of the default tree
+  loadFromIDB(records) {
+    for (const rec of records) {
+      const { path, ...node } = rec;
+      this._t[path] = node;
+    }
+  }
+
   _mkdirP(path) {
     const parts = path.split("/").filter(Boolean);
     let cur = "";
-    for (const p of parts) { cur += "/" + p; if (!this._t[cur]) this._t[cur] = { type: "dir", mtime: Date.now(), size: 0 }; }
+    for (const p of parts) { cur += "/" + p; if (!this._t[cur]) { this._t[cur] = { type: "dir", mtime: Date.now(), size: 0 }; this._persist(cur); } }
   }
 
   _wf(path, content) {
     const parent = path.lastIndexOf("/") > 0 ? path.slice(0, path.lastIndexOf("/")) : "/";
     this._mkdirP(parent);
     this._t[path] = { type: "file", content: String(content), mtime: Date.now(), size: String(content).length };
+    this._persist(path);
   }
 
   resolve(path, cwd = "/home/user") {
@@ -93,11 +176,12 @@ class VFS {
   stat(p)   { return p === "/" ? { type: "dir", mtime: Date.now(), size: 0 } : (this._t[p] ?? null); }
   read(p)   { return this.isFile(p) ? this._t[p].content : null; }
 
-  write(p, content) { this._wf(p, content); }
+  write(p, content) { this._wf(p, content); this._persist(p); }
 
   append(p, content) {
     if (this.isFile(p)) { this._t[p].content += content; this._t[p].size = this._t[p].content.length; this._t[p].mtime = Date.now(); }
     else this._wf(p, content);
+    this._persist(p);
   }
 
   ls(dir) {
@@ -113,20 +197,22 @@ class VFS {
     if (this.exists(path)) return `mkdir: cannot create directory '${path}': File exists`;
     const parent = path.slice(0, path.lastIndexOf("/")) || "/";
     if (!this.isDir(parent)) return `mkdir: cannot create directory '${path}': No such file or directory`;
-    this._t[path] = { type: "dir", mtime: Date.now(), size: 0 }; return null;
+    this._t[path] = { type: "dir", mtime: Date.now(), size: 0 }; this._persist(path); return null;
   }
 
   rmdir(path) {
     if (!this.exists(path)) return `rmdir: failed to remove '${path}': No such file or directory`;
     if (!this.isDir(path))  return `rmdir: failed to remove '${path}': Not a directory`;
     if (this.ls(path).length > 0) return `rmdir: failed to remove '${path}': Directory not empty`;
-    delete this._t[path]; return null;
+    delete this._t[path]; this._del(path); return null;
   }
 
   rm(path, recursive = false) {
     if (!this.exists(path)) return `rm: cannot remove '${path}': No such file or directory`;
     if (this.isDir(path) && !recursive) return `rm: cannot remove '${path}': Is a directory`;
-    Object.keys(this._t).filter(k => k === path || k.startsWith(path + "/")).forEach(k => delete this._t[k]);
+    const keys = Object.keys(this._t).filter(k => k === path || k.startsWith(path + "/"));
+    keys.forEach(k => delete this._t[k]);
+    this._delPrefix(path);
     return null;
   }
 
@@ -136,19 +222,54 @@ class VFS {
     const dest = this.isDir(dst) ? dst + "/" + src.split("/").pop() : dst;
     const pd = dest.slice(0, dest.lastIndexOf("/")) || "/";
     if (!this.isDir(pd)) return `cp: cannot create '${dest}': No such file or directory`;
-    this._t[dest] = { ...this._t[src], mtime: Date.now() }; return null;
+    this._t[dest] = { ...this._t[src], mtime: Date.now() }; this._persist(dest); return null;
   }
 
   mv(src, dst) {
     if (!this.exists(src)) return `mv: cannot stat '${src}': No such file or directory`;
     const dest = this.isDir(dst) ? dst + "/" + src.split("/").pop() : dst;
-    Object.keys(this._t).filter(k => k === src || k.startsWith(src + "/")).forEach(k => { this._t[dest + k.slice(src.length)] = { ...this._t[k] }; delete this._t[k]; });
+    Object.keys(this._t).filter(k => k === src || k.startsWith(src + "/")).forEach(k => {
+      const newKey = dest + k.slice(src.length);
+      this._t[newKey] = { ...this._t[k] };
+      this._persist(newKey);
+      delete this._t[k];
+    });
+    this._delPrefix(src);
     return null;
   }
 
   touch(path) {
-    if (this.isFile(path)) this._t[path].mtime = Date.now();
+    if (this.isFile(path)) { this._t[path].mtime = Date.now(); this._persist(path); }
     else this._wf(path, "");
+  }
+
+  setDb(db) {
+    this._db = db;
+  }
+
+  _persist(path) {
+    if (!this._db) return;
+    const node = this._t[path];
+    if (node) idbPut(this._db, path, node).catch(() => {});
+    else idbDelete(this._db, path).catch(() => {});
+  }
+
+  _persistPrefix(prefix) {
+    if (!this._db) return;
+    idbDeletePrefix(this._db, prefix).catch(() => {});
+    for (const k of Object.keys(this._t)) {
+      if (k === prefix || k.startsWith(prefix + "/")) idbPut(this._db, k, this._t[k]).catch(() => {});
+    }
+  }
+
+  _del(path) {
+    if (!this._db) return;
+    idbDelete(this._db, path).catch(() => {});
+  }
+
+  _delPrefix(prefix) {
+    if (!this._db) return;
+    idbDeletePrefix(this._db, prefix).catch(() => {});
   }
 
   download(path) {
@@ -882,6 +1003,13 @@ function execCmd(cmd, args, stdin, vfs, sh) {
       return { output: MAIN_HELP, exitCode: 0 };
     }
 
+    case "wipe-fs": {
+      if (!vfs._db) return { output: "wipe-fs: IndexedDB not available\n", exitCode: 1 };
+      idbDeletePrefix(vfs._db, "/").catch(() => {});
+      idbDelete(vfs._db, "/").catch(() => {});
+      return { output: "__WIPEFS__", exitCode: 0 };
+    }
+
     default:
       return { output: `mathsh: ${cmd}: command not found\n`, exitCode: 127 };
   }
@@ -892,7 +1020,7 @@ const BUILTINS = new Set(["echo","printf","cat","ls","pwd","cd","mkdir","rmdir",
   "true","false","test","[","uname","whoami","id","hostname","basename","dirname","export","unset",
   "env","printenv","read","alias","unalias","which","type","command","history","ps","jobs","kill",
   "bg","fg","du","df","find","xargs","nl","tee","seq","yes","fold","rev","od","cksum","download",
-  "clear","exit","motd","man","help"]);
+  "clear","exit","motd","man","help","wipe-fs"]);
 
 // ══════════════════════════════════════════════════════════════════════════════
 // EXECUTE INPUT  (handles ; separated commands)
@@ -986,15 +1114,65 @@ export default function App() {
   const [inp, setInp]           = useState("");
   const [cmdHist, setCmdHist]   = useState([]);
   const [cmdIdx, setCmdIdx]     = useState(-1);
+  const [savedFlash, setSavedFlash] = useState(false);
 
   const vfs    = useRef(new VFS());
   const sh     = useRef({ cwd: "/home/user", env: { HOME: "/home/user", USER: "user", PATH: "/bin:/usr/bin", SHELL: "/bin/mathsh", "?": "0" }, aliases: { ll: "ls -la", la: "ls -a" }, history: [] });
   const endRef = useRef(null);
   const inpRef = useRef(null);
+  const metaTimer = useRef(null);
 
+  // Save session meta (cwd / env / aliases / history / ans) to IDB as __meta__
+  const saveMeta = useCallback((ansOverride) => {
+    clearTimeout(metaTimer.current);
+    metaTimer.current = setTimeout(async () => {
+      if (!vfs.current._db) return;
+      try {
+        await idbPut(vfs.current._db, "__meta__", {
+          type: "meta",
+          cwd:     sh.current.cwd,
+          env:     sh.current.env,
+          aliases: sh.current.aliases,
+          history: sh.current.history.slice(-200),
+          ans:     ansOverride ?? ansR.current,
+          mtime:   Date.now(),
+          size:    0,
+        });
+        setSavedFlash(true);
+        setTimeout(() => setSavedFlash(false), 800);
+      } catch (e) { console.warn("meta save failed", e); }
+    }, 500);
+  }, []);
+
+  // Boot: open IDB, hydrate VFS from persisted records, then show motd
   useEffect(() => {
-    const motd = vfs.current.read("/etc/motd") || "";
-    setLines([{ type: "sys", text: motd.replace(/\n$/, "") }]);
+    idbOpen().then(db => {
+      vfs.current._db = db;
+      return idbLoadAll(db);
+    }).then(records => {
+      if (records && records.length > 0) {
+        const meta = records.find(r => r.path === "__meta__");
+        const nodes = records.filter(r => r.path !== "__meta__");
+        if (nodes.length > 0) vfs.current.loadFromIDB(nodes);
+        if (meta) {
+          if (meta.cwd)     sh.current.cwd     = meta.cwd;
+          if (meta.env)     sh.current.env     = { ...sh.current.env, ...meta.env };
+          if (meta.aliases) sh.current.aliases = meta.aliases;
+          if (meta.history) sh.current.history = meta.history;
+          if (meta.ans)     { setAns(meta.ans); ansR.current = meta.ans; }
+        }
+        const motd = vfs.current.read("/etc/motd") || "";
+        const restored = records.length > 1 || meta;
+        setLines([{ type: "sys", text: motd.replace(/\n$/, "") + (restored ? "\n[session restored from IndexedDB]" : "") }]);
+      } else {
+        const motd = vfs.current.read("/etc/motd") || "";
+        setLines([{ type: "sys", text: motd.replace(/\n$/, "") }]);
+      }
+    }).catch(() => {
+      // IDB unavailable (private browsing etc.) — still show motd
+      const motd = vfs.current.read("/etc/motd") || "";
+      setLines([{ type: "sys", text: motd.replace(/\n$/, "") }]);
+    });
   }, []);
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [lines]);
@@ -1029,8 +1207,9 @@ export default function App() {
       const existing = vfs.current.read("/home/user/ANS") || "";
       vfs.current.write("/home/user/ANS", existing + s + "\n");
       setDisplay(s); setExpr(s); setIsResult(true);
+      saveMeta(s);
     } catch { setDisplay("Error"); setExpr(""); setIsResult(true); }
-  }, []);
+  }, [saveMeta]);
 
   useEffect(() => {
     const h = e => {
@@ -1057,11 +1236,31 @@ export default function App() {
     for (const res of results) {
       if (!res.output) continue;
       if (res.output.startsWith("__CLEAR__")) { setLines([{ type: "sys", text: "Terminal cleared." }]); setInp(""); return; }
+      if (res.output.startsWith("__WIPEFS__")) {
+        // Clear all IDB data, then rebuild fresh VFS
+        (async () => {
+          try {
+            if (vfs.current._db) {
+              await idbDeletePrefix(vfs.current._db, "/");
+              await idbDelete(vfs.current._db, "__meta__");
+            }
+          } catch (e) { console.warn("IDB wipe failed", e); }
+          const freshVfs = new VFS();
+          freshVfs._db = vfs.current._db;
+          vfs.current = freshVfs;
+          sh.current = { cwd: "/home/user", env: { HOME: "/home/user", USER: "user", PATH: "/bin:/usr/bin", SHELL: "/bin/mathsh", "?": "0" }, aliases: { ll: "ls -la", la: "ls -a" }, history: [] };
+          setAns("0"); setCmdHist([]);
+          setLines([{ type: "sys", text: "Filesystem wiped. All persisted data cleared." }]);
+          setInp("");
+        })();
+        return;
+      }
       if (res.output.startsWith("__EXIT__")) { const code=parseInt(res.output.slice(8)); newLines.push({ type: "out", text: `[Process exited with code ${code}]` }); break; }
       const text = res.output.replace(/\n$/, "");
       if (text) newLines.push({ type: "out", text });
     }
     setLines(l => [...l, ...newLines]); setInp("");
+    saveMeta();
   };
 
   const onKey = e => {
@@ -1216,7 +1415,7 @@ export default function App() {
           <span style={{ width:9, height:9, borderRadius:"50%", background:"#3a3010", display:"inline-block" }} />
           <span style={{ width:9, height:9, borderRadius:"50%", background:"#10203a", display:"inline-block" }} />
           <span style={{ color:"#1a4a1a", marginLeft:"10px", letterSpacing:"3px", fontSize:"9px" }}>MATHSHELL v1.0</span>
-          <span style={{ color:"#0d2010", fontSize:"9px", marginLeft:"auto" }}>click to collapse ▲</span>
+          <span style={{ fontSize:"9px", marginLeft:"auto", transition:"color 0.4s", color: savedFlash ? "#22c55e" : "#0d2010" }}>{savedFlash ? "● SAVED" : "click to collapse ▲"}</span>
         </div>
 
         {/* Output */}
