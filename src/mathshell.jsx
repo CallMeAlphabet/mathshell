@@ -360,6 +360,18 @@ function runPipeline(segs, vfs, sh) {
     const [cmd, ...args] = words;
     let stdinData = pipeIn;
     if (seg.stdin) { const p = vfs.resolve(seg.stdin, sh.cwd); stdinData = vfs.read(p) ?? ""; }
+
+    // No command but has a redirect (e.g. `cmd | > file` or `cmd | >> file`):
+    // treat as a pass-through and write the pipe input directly to the file.
+    if (!cmd && seg.stdout) {
+      const content = stdinData ?? "";
+      const p = vfs.resolve(seg.stdout, sh.cwd);
+      if (seg.append) vfs.append(p, content); else vfs.write(p, content);
+      pipeIn = "";
+      if (i === segs.length - 1) lastOut = "";
+      continue;
+    }
+
     const res = execCmd(cmd, args, stdinData, vfs, sh);
     lastOut  = res.output ?? "";
     lastExit = res.exitCode ?? 0;
