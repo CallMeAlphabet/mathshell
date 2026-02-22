@@ -1330,7 +1330,7 @@ export default function App() {
       {/* Calculator */}
       <div style={{
         width: "290px",
-        transform: cliOpen ? "translateY(-25vh)" : "translateY(0)",
+        transform: cliOpen ? "translateY(-100vh)" : "translateY(0)",
         transition: "transform 0.45s cubic-bezier(0.4,0,0.2,1)",
       }}>
         {/* Display */}
@@ -1392,7 +1392,7 @@ export default function App() {
 
       {/* Terminal panel */}
       <div style={{
-        position: "fixed", bottom: 0, left: 0, right: 0, height: "48vh",
+        position: "fixed", bottom: 0, left: 0, right: 0, height: "100vh",
         background: "#020205", borderTop: "1px solid #0c180c",
         transform: cliOpen ? "translateY(0)" : "translateY(100%)",
         transition: "transform 0.45s cubic-bezier(0.4,0,0.2,1)",
