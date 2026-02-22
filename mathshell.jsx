@@ -24,13 +24,10 @@ const upArrow = (a, n, b, depth = 0) => {
 
 function mathEval(expr, vars = {}) {
   let p = expr.trim();
-  // Substitute variables
   Object.entries(vars).forEach(([k, v]) => {
     p = p.replace(new RegExp(`\\b${k}\\b`, 'g'), `(${v})`);
   });
-  // Constants
   p = p.replace(/π/g, '(Math.PI)').replace(/\bpi\b/gi, '(Math.PI)');
-  // Functions (before standalone e replacement)
   p = p
     .replace(/\bsin\b/g, 'Math.sin').replace(/\bcos\b/g, 'Math.cos')
     .replace(/\btan\b/g, 'Math.tan').replace(/\basin\b/g, 'Math.asin')
@@ -42,14 +39,10 @@ function mathEval(expr, vars = {}) {
     .replace(/\bround\b/g, 'Math.round').replace(/\bsign\b/g, 'Math.sign')
     .replace(/\bln\b/g, 'Math.log').replace(/\blog\b/g, 'Math.log10')
     .replace(/\bmod\b/gi, '%');
-  // Standalone e (not in scientific notation or variable names)
   p = p.replace(/(?<![a-zA-Z\d_])e(?![a-zA-Z\d_])/g, '(Math.E)');
-  // Factorial: n!
   p = p.replace(/(\d+(?:\.\d+)?)\s*!/g, 'factorial($1)');
-  // Up-arrows: a{n}b → upArrow(a,n,b)
   let prev = '';
   while (prev !== p) { prev = p; p = p.replace(/([\d.]+)\{(\d+)\}([\d.]+)/g, 'upArrow($1,$2,$3)'); }
-  // Exponent
   p = p.replace(/\^/g, '**');
   return new Function('factorial', 'upArrow', `"use strict"; return (${p});`)(factorial, upArrow);
 }
@@ -99,21 +92,23 @@ const HELP = `MathShell — commands & syntax
     3 + 3 * 2          arithmetic
     2^10               exponentiation
     3{2}3              3^^3  (tetration)
-    3{3}3              3^^^3 (pentation) → ∞
+    3{3}3              3^^^3 → ∞
     10!                factorial
-    sin(pi/2)          trig  →  1
-    floor(e^2)         e squared floored
+    sin(pi/2)          →  1
+    floor(e^2)         floored
 
   Variables:
     x = 42             assign
-    x + 8              use it  →  50
+    x + 8              →  50
     _                  last result
 
   Pipes:
     3+3 | *2           →  12
-    3+3 | +_           →  12  (_ = piped value)
-    3+3 | >out.txt     save result to file
-    3+3 | >>out.txt    append to file`;
+    3+3 | +_           →  12
+    3+3 | >out.txt     save to file
+    3+3 | >>out.txt    append to file
+
+  ANS is always appended to /ANS automatically.`;
 
 function runCmd(raw, vfs, vars, setVars) {
   const r = raw.trim();
@@ -141,8 +136,6 @@ function runCmd(raw, vfs, vars, setVars) {
     const n = r.slice(9).trim();
     return vfs.dl(n) ? `⬇  downloading ${n}…` : `not found: ${n}`;
   }
-
-  // Assignment (no pipe)
   const am = r.match(/^([a-zA-Z_]\w*)\s*=\s*(.+)$/);
   if (am && !r.includes('|')) {
     try {
@@ -152,8 +145,6 @@ function runCmd(raw, vfs, vars, setVars) {
       return `${am[1]} = ${s}`;
     } catch (e) { return `Error: ${e.message}`; }
   }
-
-  // Pipe chain
   if (r.includes('|')) {
     const parts = r.split('|');
     let acc, as;
@@ -171,15 +162,13 @@ function runCmd(raw, vfs, vars, setVars) {
     }
     return as;
   }
-
-  // Plain expression
   try { return fmt(mathEval(r, vars)); }
   catch (e) { return `Error: ${e.message}`; }
 }
 
-// ── BUTTON COMPONENT ──────────────────────────────────────────────────────────
+// ── BUTTON ────────────────────────────────────────────────────────────────────
 
-function Btn({ label, onClick, bg = '#161616', fg = '#b0a89e', span = 1 }) {
+function Btn({ label, onClick, bg = '#161616', fg = '#d4ccc5', fontSize = '13px' }) {
   const [active, setActive] = useState(false);
   return (
     <button
@@ -188,20 +177,20 @@ function Btn({ label, onClick, bg = '#161616', fg = '#b0a89e', span = 1 }) {
       onMouseUp={() => setActive(false)}
       onMouseLeave={() => setActive(false)}
       style={{
-        background: active ? `${bg}dd` : bg,
+        background: active ? `${bg}bb` : bg,
         color: fg, border: 'none',
         borderRadius: '8px', padding: '14px 4px',
-        fontFamily: 'JetBrains Mono, monospace', fontSize: '13px',
-        cursor: 'pointer', gridColumn: `span ${span}`,
+        fontFamily: 'JetBrains Mono, monospace', fontSize,
+        cursor: 'pointer',
         transform: active ? 'scale(0.93)' : 'scale(1)',
         transition: 'transform 0.07s, filter 0.1s',
         outline: 'none', userSelect: 'none',
         boxShadow: active
           ? 'inset 0 2px 6px rgba(0,0,0,0.6)'
-          : 'inset 0 1px 0 rgba(255,255,255,0.05), 0 2px 4px rgba(0,0,0,0.5)',
+          : 'inset 0 1px 0 rgba(255,255,255,0.06), 0 2px 4px rgba(0,0,0,0.5)',
       }}
-      onMouseEnter={e => { e.currentTarget.style.filter = 'brightness(1.6)'; }}
-      onMouseLeave={e => { e.currentTarget.style.filter = 'brightness(1)'; }}
+      onMouseEnter={e => { e.currentTarget.style.filter = 'brightness(1.7)'; }}
+      onMouseLeave={e => { e.currentTarget.style.filter = 'brightness(1)'; setActive(false); }}
     >{label}</button>
   );
 }
@@ -210,6 +199,8 @@ function Btn({ label, onClick, bg = '#161616', fg = '#b0a89e', span = 1 }) {
 
 export default function App() {
   const [expr, setExpr] = useState('');
+  const [display, setDisplay] = useState('0');
+  const [isResult, setIsResult] = useState(false);
   const [ans, setAns] = useState('0');
   const [cliOpen, setCliOpen] = useState(false);
   const [hist, setHist] = useState([{ t: 'sys', s: 'MathShell v1.0 — type "help" for commands' }]);
@@ -222,51 +213,82 @@ export default function App() {
   const inpRef = useRef(null);
   const exprRef = useRef(expr);
   exprRef.current = expr;
+  const isResultRef = useRef(isResult);
+  isResultRef.current = isResult;
+  const displayRef = useRef(display);
+  displayRef.current = display;
+  const ansRef = useRef(ans);
+  ansRef.current = ans;
 
-  // Scroll CLI to bottom
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [hist]);
-
-  // Focus CLI input when opened
   useEffect(() => { if (cliOpen) setTimeout(() => inpRef.current?.focus(), 350); }, [cliOpen]);
 
-  // Live preview
-  useEffect(() => {
-    if (!expr) { setPreview(''); return; }
-    try { setPreview(fmt(mathEval(expr, vars))); } catch { setPreview(''); }
-  }, [expr, vars]);
+  const ap = useCallback(v => {
+    const isOp = ['+', '-', '*', '/', '^', '%'].includes(v);
+    if (isResultRef.current) {
+      if (isOp) {
+        const ne = displayRef.current + v;
+        setExpr(ne); setDisplay(ne);
+      } else {
+        setExpr(v); setDisplay(v);
+      }
+      setIsResult(false);
+    } else {
+      setExpr(ex => { const ne = ex + v; setDisplay(ne); return ne; });
+    }
+  }, []);
 
-  // Keyboard handler for calculator
-  useEffect(() => {
-    const h = (e) => {
-      if (cliOpen && document.activeElement === inpRef.current) return;
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-      const k = e.key;
-      if (k >= '0' && k <= '9') { setExpr(ex => ex + k); }
-      else if (['+', '-', '*', '/', '(', ')', '.', '^'].includes(k)) { setExpr(ex => ex + k); }
-      else if (k === 'Enter') { evalExpr(); }
-      else if (k === 'Backspace') { setExpr(ex => ex.slice(0, -1)); }
-      else if (k === 'Escape') { setExpr(''); setPreview(''); }
-    };
-    window.addEventListener('keydown', h);
-    return () => window.removeEventListener('keydown', h);
-  }, [cliOpen, vars]);
+  const doBs = useCallback(() => {
+    if (isResultRef.current) { setExpr(''); setDisplay('0'); setIsResult(false); return; }
+    setExpr(ex => { const ne = ex.slice(0, -1); setDisplay(ne || '0'); return ne; });
+  }, []);
 
-  const ap = v => setExpr(e => e + v);
-  const bs = () => setExpr(e => e.slice(0, -1));
-  const clr = () => { setExpr(''); setPreview(''); };
+  const doClear = useCallback(() => {
+    setExpr(''); setDisplay('0'); setIsResult(false);
+  }, []);
 
-  const evalExpr = useCallback(() => {
+  const insertAns = useCallback(() => {
+    const a = ansRef.current;
+    if (isResultRef.current) { setExpr(a); setDisplay(a); setIsResult(false); }
+    else { setExpr(ex => { const ne = ex + a; setDisplay(ne); return ne; }); }
+  }, []);
+
+  const doEval = useCallback(() => {
     const e = exprRef.current;
-    if (!e) return;
+    if (!e || e === '0') return;
     try {
       const r = mathEval(e, vars);
       const s = fmt(r);
+      setAns(s);
       setVars(v => ({ ...v, _: s }));
-      setExpr(s); setPreview('');
-    } catch { setExpr('Error'); }
+      // Append to /ANS file
+      const existing = vfs.current.read('ANS') || '';
+      const lines = existing ? existing.split('\n').filter(Boolean) : [];
+      lines.push(s);
+      vfs.current.write('ANS', lines.join('\n'));
+      setDisplay(s); setExpr(s); setIsResult(true);
+    } catch {
+      setDisplay('Error'); setExpr(''); setIsResult(true);
+    }
   }, [vars]);
 
-  // CLI submit
+  // Keyboard support
+  useEffect(() => {
+    const h = e => {
+      if (cliOpen && document.activeElement === inpRef.current) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const k = e.key;
+      if (k >= '0' && k <= '9') ap(k);
+      else if (['+', '-', '*', '/', '(', ')', '.', '^'].includes(k)) ap(k);
+      else if (k === 'Enter') doEval();
+      else if (k === 'Backspace') doBs();
+      else if (k === 'Escape') doClear();
+    };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [cliOpen, ap, doEval, doBs, doClear]);
+
+  // CLI
   const submit = () => {
     if (!inp.trim()) return;
     const i = inp.trim();
@@ -292,50 +314,70 @@ export default function App() {
     }
   };
 
-  // Button layout
+  // Button colour palette — all fg values are bright and legible
+  const C = {
+    num:  { bg: '#161616', fg: '#ede5dc' },
+    op:   { bg: '#0e1a0e', fg: '#7ddd9c' },
+    fn:   { bg: '#10101e', fg: '#c0b8ff' },
+    spec: { bg: '#1e0d0d', fg: '#ff8888' },
+    arr:  { bg: '#1c1200', fg: '#ffca7a' },
+    eq:   { bg: '#0b1f0b', fg: '#5dff80' },
+    ans:  { bg: '#0a1520', fg: '#60d0ff' },
+    dim:  { bg: '#141414', fg: '#9a97a2' },
+  };
+
   const rows = [
     [
-      { l: 'C', fn: clr, bg: '#1a0e0e', fg: '#f87171' },
-      { l: '(', fn: () => ap('('), bg: '#141414', fg: '#94a3b8' },
-      { l: ')', fn: () => ap(')'), bg: '#141414', fg: '#94a3b8' },
-      { l: '⌫', fn: bs, bg: '#141414', fg: '#64748b' },
+      { l: 'C',     fn: doClear,           ...C.spec },
+      { l: '(',     fn: () => ap('('),     ...C.dim  },
+      { l: ')',     fn: () => ap(')'),     ...C.dim  },
+      { l: '⌫',    fn: doBs,              ...C.dim  },
     ],
     [
-      { l: 'sin', fn: () => ap('sin('), bg: '#10101c', fg: '#a5b4fc' },
-      { l: 'cos', fn: () => ap('cos('), bg: '#10101c', fg: '#a5b4fc' },
-      { l: 'tan', fn: () => ap('tan('), bg: '#10101c', fg: '#a5b4fc' },
-      { l: '÷', fn: () => ap('/'), bg: '#0e160e', fg: '#86efac' },
+      { l: 'sin',   fn: () => ap('sin('), ...C.fn },
+      { l: 'cos',   fn: () => ap('cos('), ...C.fn },
+      { l: 'tan',   fn: () => ap('tan('), ...C.fn },
+      { l: '÷',     fn: () => ap('/'),    ...C.op },
     ],
     [
-      { l: '7', fn: () => ap('7') }, { l: '8', fn: () => ap('8') }, { l: '9', fn: () => ap('9') },
-      { l: '×', fn: () => ap('*'), bg: '#0e160e', fg: '#86efac' },
+      { l: '7', fn: () => ap('7'), ...C.num },
+      { l: '8', fn: () => ap('8'), ...C.num },
+      { l: '9', fn: () => ap('9'), ...C.num },
+      { l: '×', fn: () => ap('*'), ...C.op  },
     ],
     [
-      { l: '4', fn: () => ap('4') }, { l: '5', fn: () => ap('5') }, { l: '6', fn: () => ap('6') },
-      { l: '−', fn: () => ap('-'), bg: '#0e160e', fg: '#86efac' },
+      { l: '4', fn: () => ap('4'), ...C.num },
+      { l: '5', fn: () => ap('5'), ...C.num },
+      { l: '6', fn: () => ap('6'), ...C.num },
+      { l: '−', fn: () => ap('-'), ...C.op  },
     ],
     [
-      { l: '1', fn: () => ap('1') }, { l: '2', fn: () => ap('2') }, { l: '3', fn: () => ap('3') },
-      { l: '+', fn: () => ap('+'), bg: '#0e160e', fg: '#86efac' },
+      { l: '1', fn: () => ap('1'), ...C.num },
+      { l: '2', fn: () => ap('2'), ...C.num },
+      { l: '3', fn: () => ap('3'), ...C.num },
+      { l: '+', fn: () => ap('+'), ...C.op  },
     ],
     [
-      { l: '0', fn: () => ap('0') }, { l: '.', fn: () => ap('.') },
-      { l: 'xʸ', fn: () => ap('^'), bg: '#101018', fg: '#c4b5fd' },
-      { l: '=', fn: evalExpr, bg: '#0c1c0c', fg: '#4ade80' },
+      { l: '0',   fn: () => ap('0'),      ...C.num },
+      { l: '.',   fn: () => ap('.'),      ...C.num },
+      { l: 'xʸ', fn: () => ap('^'),      ...C.fn  },
+      { l: '=',   fn: doEval,             ...C.eq  },
     ],
     [
-      { l: 'n!', fn: () => ap('!'), bg: '#10101a', fg: '#818cf8' },
-      { l: 'π', fn: () => ap('π'), bg: '#10101a', fg: '#818cf8' },
-      { l: '√', fn: () => ap('sqrt('), bg: '#10101a', fg: '#818cf8' },
-      { l: 'log', fn: () => ap('log('), bg: '#10101a', fg: '#818cf8' },
+      { l: 'ANS', fn: insertAns,          ...C.ans },
+      { l: 'n!',  fn: () => ap('!'),      ...C.fn  },
+      { l: 'π',   fn: () => ap('π'),      ...C.fn  },
+      { l: '√',   fn: () => ap('sqrt('),  ...C.fn  },
     ],
     [
-      { l: '↑↑', fn: () => ap('{2}'), bg: '#160e06', fg: '#fb923c' },
-      { l: '↑↑↑', fn: () => ap('{3}'), bg: '#160e06', fg: '#fb923c' },
-      { l: 'mod', fn: () => ap(' mod '), bg: '#160e06', fg: '#fbbf24' },
-      { l: 'ln', fn: () => ap('ln('), bg: '#10101a', fg: '#818cf8' },
+      { l: '↑↑',  fn: () => ap('{2}'),   ...C.arr },
+      { l: '↑↑↑', fn: () => ap('{3}'),   ...C.arr, fontSize: '11px' },
+      { l: 'mod', fn: () => ap(' mod '),  ...C.arr },
+      { l: 'log', fn: () => ap('log('),   ...C.fn  },
     ],
   ];
+
+  const dispFontSize = display.length > 14 ? '18px' : display.length > 9 ? '24px' : '32px';
 
   return (
     <div style={{
@@ -354,55 +396,71 @@ export default function App() {
       }}>
         {/* Display */}
         <div style={{
-          background: '#040404', border: '1px solid #1a1a1a',
-          borderRadius: '12px 12px 0 0', padding: '14px 16px 18px',
+          background: '#040404', border: '1px solid #1c1c1c',
+          borderRadius: '12px 12px 0 0', padding: '14px 16px 14px',
           boxShadow: 'inset 0 0 50px rgba(0,0,0,0.7)',
         }}>
+          {/* Expression line */}
           <div style={{
-            color: '#2a2520', fontSize: '11px', textAlign: 'right',
+            color: '#2e2a26', fontSize: '11px', textAlign: 'right',
             minHeight: '16px', overflow: 'hidden', textOverflow: 'ellipsis',
             whiteSpace: 'nowrap', marginBottom: '8px', letterSpacing: '0.5px',
           }}>
-            {expr || '·'}
+            {isResult ? expr : (expr || '·')}
           </div>
+
+          {/* Big display */}
           <div style={{
-            color: preview ? '#e8ddd0' : '#3a3530',
-            fontSize: '32px', textAlign: 'right', minHeight: '46px',
+            color: isResult ? '#ede5dc' : '#5a5450',
+            fontSize: dispFontSize, textAlign: 'right', minHeight: '46px',
             fontWeight: '300', letterSpacing: '-1px',
-            textShadow: preview ? '0 0 30px rgba(232,221,208,0.15)' : 'none',
+            textShadow: isResult ? '0 0 30px rgba(237,229,220,0.1)' : 'none',
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-            transition: 'color 0.15s',
+            transition: 'color 0.1s, font-size 0.1s',
+            display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end',
           }}>
-            {preview || (expr ? '…' : '0')}
+            {display}
+          </div>
+
+          {/* ANS indicator */}
+          <div style={{
+            color: '#1a3848', fontSize: '10px', textAlign: 'left',
+            marginTop: '6px', letterSpacing: '2px',
+          }}>
+            ANS: <span style={{ color: '#1e4a60' }}>{ans}</span>
           </div>
         </div>
 
-        {/* Buttons */}
+        {/* Button grid */}
         <div style={{
-          background: '#0c0c0c', border: '1px solid #1a1a1a', borderTop: 'none',
+          background: '#0c0c0c', border: '1px solid #1c1c1c', borderTop: 'none',
           borderRadius: '0 0 12px 12px', padding: '8px',
           display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '5px',
           boxShadow: '0 30px 80px rgba(0,0,0,0.9)',
         }}>
           {rows.map((row, i) => row.map((b, j) => (
-            <Btn key={`${i}-${j}`} label={b.l} onClick={b.fn} bg={b.bg} fg={b.fg} />
+            <Btn key={`${i}-${j}`} label={b.l} onClick={b.fn}
+              bg={b.bg} fg={b.fg} fontSize={b.fontSize || '13px'} />
           )))}
         </div>
 
-        {/* CLI toggle */}
+        {/* Terminal toggle button */}
         <button
           onClick={() => setCliOpen(o => !o)}
           style={{
             width: '100%', marginTop: '7px', padding: '8px',
             background: 'transparent',
-            border: `1px solid ${cliOpen ? '#1a3d1a' : '#1a1a1a'}`,
-            color: cliOpen ? '#22c55e' : '#1e3a1e',
+            border: `1px solid ${cliOpen ? '#1c4a1c' : '#1c1c1c'}`,
+            color: cliOpen ? '#22c55e' : '#2c4a2c',
             fontSize: '10px', fontFamily: 'JetBrains Mono, monospace',
             cursor: 'pointer', borderRadius: '8px',
             transition: 'all 0.2s', letterSpacing: '3px',
           }}
           onMouseEnter={e => { e.currentTarget.style.borderColor = '#22c55e'; e.currentTarget.style.color = '#4ade80'; }}
-          onMouseLeave={e => { e.currentTarget.style.borderColor = cliOpen ? '#1a3d1a' : '#1a1a1a'; e.currentTarget.style.color = cliOpen ? '#22c55e' : '#1e3a1e'; }}
+          onMouseLeave={e => {
+            e.currentTarget.style.borderColor = cliOpen ? '#1c4a1c' : '#1c1c1c';
+            e.currentTarget.style.color = cliOpen ? '#22c55e' : '#2c4a2c';
+          }}
         >
           {cliOpen ? '▲  CLOSE  TERMINAL' : '▼  OPEN  TERMINAL'}
         </button>
@@ -417,19 +475,27 @@ export default function App() {
         display: 'flex', flexDirection: 'column',
         fontFamily: 'JetBrains Mono, monospace', zIndex: 10,
       }}>
-        {/* Header */}
-        <div style={{
-          padding: '6px 16px', borderBottom: '1px solid #0a1a0a',
-          background: '#040407', display: 'flex', alignItems: 'center', gap: '7px',
-        }}>
-          <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#1a3a1a', display: 'inline-block' }} />
-          <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#2a2a0a', display: 'inline-block' }} />
-          <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#1a1a2a', display: 'inline-block' }} />
-          <span style={{ color: '#1a4a1a', fontSize: '10px', marginLeft: '8px', letterSpacing: '2.5px' }}>MATHSHELL v1.0</span>
-          <span style={{ color: '#0d2a0d', fontSize: '10px', marginLeft: 'auto', letterSpacing: '1px' }}>pipes · vfs · up-arrows</span>
+        {/* Clickable header — collapses terminal */}
+        <div
+          onClick={() => setCliOpen(false)}
+          title="Click to collapse"
+          onMouseEnter={e => e.currentTarget.style.background = '#06060a'}
+          onMouseLeave={e => e.currentTarget.style.background = '#040407'}
+          style={{
+            padding: '6px 16px', borderBottom: '1px solid #0a1a0a',
+            background: '#040407', display: 'flex', alignItems: 'center', gap: '7px',
+            cursor: 'pointer', transition: 'background 0.15s',
+            userSelect: 'none',
+          }}
+        >
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#4a1a1a', display: 'inline-block' }} />
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#4a4a1a', display: 'inline-block' }} />
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#1a2a4a', display: 'inline-block' }} />
+          <span style={{ color: '#1a5a1a', fontSize: '10px', marginLeft: '8px', letterSpacing: '2.5px' }}>MATHSHELL v1.0</span>
+          <span style={{ color: '#0d2a0d', fontSize: '10px', marginLeft: 'auto', letterSpacing: '1px' }}>click to collapse ▲</span>
         </div>
 
-        {/* Output */}
+        {/* Output area */}
         <div style={{ flex: 1, overflow: 'auto', padding: '10px 16px' }}>
           {hist.map((h, i) => (
             <div key={i} style={{
@@ -445,7 +511,7 @@ export default function App() {
           <div ref={endRef} />
         </div>
 
-        {/* Input */}
+        {/* Input row */}
         <div style={{
           padding: '8px 16px', borderTop: '1px solid #0a1a0a',
           background: '#040407', display: 'flex', alignItems: 'center', gap: '10px',
